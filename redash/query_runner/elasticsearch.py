@@ -138,7 +138,7 @@ class BaseElasticSearch(BaseQueryRunner):
                                 mappings[property_name] = ELASTICSEARCH_TYPES_MAPPING[property_type]
                             else:
                                 mappings[property_name] = TYPE_STRING
-                                #raise Exception("Unknown property type: {0}".format(property_type))
+                                # raise Exception("Unknown property type: {0}".format(property_type))
 
         return mappings, error
 
@@ -202,23 +202,23 @@ class BaseElasticSearch(BaseQueryRunner):
             for key, item in data.iteritems():
                 if key == 'key_as_string':
                     continue
-                if key == 'key':
+                elif key == 'key':
                     if 'key_as_string' in data:
                         collect_value(mappings, row, agg_key, data['key_as_string'], 'string')
                     else:
                         collect_value(mappings, row, agg_key, data['key'], 'string')
-                    continue
 
                 if isinstance(item, str):
                     collect_value(mappings, row, agg_key + '>' + key, item, 'string')
-                if isinstance(item, int):
+                elif isinstance(item, int):
                     collect_value(mappings, row, agg_key + '>' + key, item, 'integer')
-                if isinstance(item, float):
+                elif isinstance(item, float):
                     collect_value(mappings, row, agg_key + '>' + key, item, 'float')
-                if isinstance(item, dict):
+                elif isinstance(item, dict):
                     if 'buckets' not in item:
                         for subKey, subItem in item.iteritems():
-                            collect_value(mappings, row, agg_key + '>' + key + '>' + subKey, subItem, 'float')
+                            _type = 'integer' if isinstance(subItem, int) else 'float'
+                            collect_value(mappings, row, agg_key + '>' + key + '>' + subKey, subItem, _type)  # todo
                     else:
                         sub_agg_key = key
 
@@ -236,14 +236,23 @@ class BaseElasticSearch(BaseQueryRunner):
                     rows.append(row)
                 else:
                     depth += 1
-                    parse_buckets_list(mappings, rows, sub_agg_key, value[sub_agg_key]['buckets'], row, depth)
+                    if isinstance(value[sub_agg_key]['buckets'], list):
+                        parse_buckets_list(mappings, rows, sub_agg_key, value[sub_agg_key]['buckets'], row, depth)
+                    elif isinstance(value[sub_agg_key]['buckets'], dict):
+                        sub_agg_key = parse_bucket_to_row(mappings, value[sub_agg_key]['buckets'], row,
+                                                          parent_key + '>' + sub_agg_key)
+                        if sub_agg_key == "":
+                            rows.append(row)
 
         def collect_aggregations(mappings, rows, parent_key, data, row, depth):
             row = get_row(rows, row)
             parse_bucket_to_row(mappings, data, row, parent_key)
 
             if 'buckets' in data:
-                parse_buckets_list(mappings, rows, parent_key, data['buckets'], row, depth)
+                if isinstance(data['buckets'], list):
+                    parse_buckets_list(mappings, rows, parent_key, data['buckets'], row, depth)
+                elif isinstance(data['buckets'], dict):
+                    parse_bucket_to_row(mappings, data['buckets'], row, parent_key)
 
             return None
 
@@ -368,7 +377,8 @@ class Kibana(BaseElasticSearch):
                 _from = 0
                 while True:
                     query_size = size if limit >= (_from + size) else (limit - _from)
-                    total = self._execute_simple_query(url + "&size={0}".format(query_size), self.auth, _from, mappings, result_fields, result_columns, result_rows)
+                    total = self._execute_simple_query(url + "&size={0}".format(query_size), self.auth, _from, mappings,
+                                                       result_fields, result_columns, result_rows)
                     _from += size
                     if _from >= limit:
                         break
